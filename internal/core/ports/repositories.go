@@ -1,7 +1,7 @@
 package ports
 
 import (
-	"github.com/Onealife/MyStoreShop/internal/core/domain"
+	"github.com/Onealife/Nutchapholshop/internal/core/domain"
 	"github.com/google/uuid"
 )
 

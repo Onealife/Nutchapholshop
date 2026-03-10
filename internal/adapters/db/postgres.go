@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Onealife/MyStoreShop/config"
-	"github.com/Onealife/MyStoreShop/internal/core/domain"
+	"github.com/Onealife/Nutchapholshop/config"
+	"github.com/Onealife/Nutchapholshop/internal/core/domain"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

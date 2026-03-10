@@ -3,60 +3,114 @@ package middleware
 import (
 	"strings"
 
+	"github.com/Onealife/Nutchapholshop/internal/core/domain/entities"
 	"github.com/Onealife/Nutchapholshop/pkg/utils"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
-func AuthMiddleware() fiber.Handler {
-	// Return the middleware function
+type AuthMiddleware struct {
+	jwtSecret string
+}
+
+func NewAuthMiddleware(jwtSecret string) *AuthMiddleware {
+	return &AuthMiddleware{
+		jwtSecret: jwtSecret,
+	}
+}
+
+// AuthRequired middleware ตรวจสอบ JWT token
+func (m *AuthMiddleware) AuthRequired() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Get the Authorization header
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Authorization header required",
+			return c.Status(fiber.StatusUnauthorized).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "ไม่พบ Authorization header",
 			})
 		}
 
-		// token format is "[1]Bearer [2]<token>" = len 2
-		// tokenParts[0] = "Bearer" index 0
-		// tokenParts[1] = "<token>" index 1
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Invalid authorization header format",
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenString == authHeader {
+			return c.Status(fiber.StatusUnauthorized).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "รูปแบบ token ไม่ถูกต้อง",
 			})
 		}
-		// Validate the token
-		token := tokenParts[1]
-		claims, err := utils.ValidateJWT(token)
+
+		token, err := jwt.ParseWithClaims(tokenString, &utils.Claims{}, func(token *jwt.Token) (interface{}, error) {
+			return []byte(m.jwtSecret), nil
+		})
+
+		if err != nil || !token.Valid {
+			return c.Status(fiber.StatusUnauthorized).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "Token ไม่ถูกต้องหรือหมดอายุ",
+			})
+		}
+
+		claims, ok := token.Claims.(*utils.Claims)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "Claims ไม่ถูกต้อง",
+			})
+		}
+
+		// แปลง UserID เป็น UUID
+		userID, err := uuid.Parse(claims.UserID)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "Invalid token",
+			return c.Status(fiber.StatusUnauthorized).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "User ID ไม่ถูกต้อง",
 			})
 		}
 
-		// Store user information in context
-		c.Locals("userID", claims.UserID)
+		// เก็บข้อมูลผู้ใช้ใน context
+		c.Locals("userID", userID)
+		c.Locals("email", claims.Email)
 		c.Locals("role", claims.Role)
 
-		// Proceed to the next middleware/handler
 		return c.Next()
 	}
 }
 
-// func สำหรับตรวจสอบ role ที่ต้องการ
-func RequiredRole(roles ...string) fiber.Handler {
+// AdminRequired middleware ตรวจสอบว่าเป็น admin
+func (m *AuthMiddleware) AdminRequired() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		userRole := c.Locals("role").(string)
+		role, ok := c.Locals("role").(string)
+		if !ok || role != "admin" {
+			return c.Status(fiber.StatusForbidden).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "ไม่มีสิทธิ์เข้าถึง",
+			})
+		}
 
-		for _, role := range roles {
-			if userRole == role {
+		return c.Next()
+	}
+}
+
+// RoleRequired middleware ตรวจสอบ role ที่กำหนด
+func (m *AuthMiddleware) RoleRequired(allowedRoles ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		role, ok := c.Locals("role").(string)
+		if !ok {
+			return c.Status(fiber.StatusForbidden).JSON(entities.ApiResponse{
+				Success: false,
+				Message: "ไม่พบข้อมูล role",
+			})
+		}
+
+		for _, allowedRole := range allowedRoles {
+			if role == allowedRole {
 				return c.Next()
 			}
 		}
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-			"error": "insufficient permissions",
+
+		return c.Status(fiber.StatusForbidden).JSON(entities.ApiResponse{
+			Success: false,
+			Message: "ไม่มีสิทธิ์เข้าถึง",
 		})
 	}
 }
